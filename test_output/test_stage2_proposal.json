@@ -1,0 +1,128 @@
+{
+  "prospect_name": "Cape Coast Coffee",
+  "start_date": "JULY 2026",
+  "brand_summary": "Cape Coast Coffee is a premium single-origin coffee brand selling direct-to-consumer, currently held back by a sluggish WooCommerce store that's difficult to manage and underperforming in search. The opportunity is clear: migrate to Shopify for a faster, cleaner buying experience, then layer in proper e-commerce SEO to capture the growing organic demand for specialty coffee in South Africa.",
+  "realities": [
+    {
+      "title": "The Platform Problem",
+      "text": "The current WooCommerce store is slow, clunky, and a pain to manage day-to-day. It's costing Cape Coast Coffee sales \u2014 both through poor page speed killing conversions and through the time Sarah's team spends wrestling with the backend instead of growing the brand. A move to Shopify fixes this at the foundation level."
+    },
+    {
+      "title": "The Organic Gap",
+      "text": "Premium single-origin coffee is a category where consumers actively search for information \u2014 origin stories, brewing guides, tasting notes. Right now, Cape Coast Coffee isn't showing up for those queries. There's a significant organic traffic opportunity being left on the table, and the current site's technical limitations make it nearly impossible to rank well."
+    },
+    {
+      "title": "The Timing",
+      "text": "Festive season is the biggest DTC gifting window of the year, and coffee is a natural fit. Launching a new store and building organic momentum before Q4 means Cape Coast Coffee can capitalise on seasonal demand rather than scrambling to catch up. The timeline is tight but achievable if we move decisively."
+    }
+  ],
+  "plan": [
+    {
+      "title": "Audit & Migration Planning",
+      "items": [
+        "Full WooCommerce site audit \u2014 products, customers, orders, integrations, URL structure",
+        "SEO/AEO audit to baseline current organic performance and identify quick wins"
+      ]
+    },
+    {
+      "title": "Store Build & Data Migration",
+      "items": [
+        "Shopify theme build with brand customisation, mobile-first responsive design, and full product migration from WooCommerce",
+        "301 redirect mapping to preserve all existing SEO equity during the migration"
+      ]
+    },
+    {
+      "title": "Optimisation & Configuration",
+      "items": [
+        "Payment gateway setup (PayFast/Yoco), shipping configuration, checkout flow optimisation with trust signals and upsells",
+        "On-page SEO foundations \u2014 metadata, schema markup, heading structure, alt tags across all migrated content"
+      ]
+    },
+    {
+      "title": "QA, Launch & Handover",
+      "items": [
+        "Cross-browser and device testing, checkout simulation, page speed optimisation targeting 80+ PageSpeed Insights score",
+        "DNS cutover, go-live, 48-hour post-launch monitoring, and full store handover to the Cape Coast Coffee team"
+      ]
+    },
+    {
+      "title": "Organic Growth Engine",
+      "items": [
+        "Ongoing E-Commerce SEO Lite \u2014 20 target keywords, product and collection page optimisation, 2 blogs/month, backlink building",
+        "AEO layer with FAQ schemas, featured snippet targeting, and AI-friendly product descriptions to show up in ChatGPT and Google AI Overviews"
+      ]
+    }
+  ],
+  "cost": {
+    "line_1_name": "WooCommerce \u2192 Shopify Migration (Small)",
+    "line_1_desc": "Full WooCommerce migration, Shopify theme build, product/customer/order migration, 301 redirects, payment & shipping config, QA & launch",
+    "line_1_price": "R58,000",
+    "total": "R58,000 once-off + R12,500/month (SEO)"
+  },
+  "deliverables": [
+    {
+      "title": "Migration & Store",
+      "items": [
+        "Full WooCommerce \u2192 Shopify migration (products, customers, orders)",
+        "Custom-branded Shopify theme build with all core pages",
+        "301 redirect implementation for SEO equity preservation",
+        "Payment gateway and shipping/logistics configuration"
+      ]
+    },
+    {
+      "title": "Performance & QA",
+      "items": [
+        "Page speed optimisation (80+ PageSpeed Insights)",
+        "Cross-browser and device QA",
+        "Checkout simulation and go-live smoke test",
+        "Branded email notification templates"
+      ]
+    },
+    {
+      "title": "SEO Foundations",
+      "items": [
+        "SEO/AEO audit with prioritised action plan",
+        "20 target keywords researched and mapped",
+        "Product schema markup (10 products/month)",
+        "Metadata and alt-tag optimisation across store"
+      ]
+    },
+    {
+      "title": "Ongoing SEO & Content",
+      "items": [
+        "2 SEO blog posts per month (800\u20131,200 words)",
+        "5\u201310 quality backlinks per month",
+        "3 FAQ schemas and 3 featured snippet targets per month",
+        "5 AI-friendly product descriptions per month"
+      ]
+    }
+  ],
+  "timeline": "10\u201314 weeks from kick-off to organic growth phase. Migration and store build in weeks 1\u20136, SEO audit and foundations in weeks 4\u20138 (overlapping), ongoing SEO retainer from launch. Targeting a pre-festive season go-live.",
+  "out_of_scope": "Brand/logo design, social media management, paid advertising (Google/Meta Ads), copywriting beyond SEO blog posts, custom Shopify app development, photography or product shoots",
+  "to_get_started": [
+    {
+      "title": "WooCommerce Access",
+      "text": "Admin access to the current WooCommerce store so we can run the full migration audit \u2014 products, customers, orders, plugins, and URL structure."
+    },
+    {
+      "title": "Brand Assets",
+      "text": "Logo files (SVG/PNG), brand colour codes, typography preferences, and any high-resolution product photography you have available."
+    },
+    {
+      "title": "Product & Content Review",
+      "text": "Confirmation of which products, collections, and pages should migrate. Flag anything that's outdated or should be retired \u2014 this is a clean-slate opportunity."
+    },
+    {
+      "title": "Payment & Shipping Details",
+      "text": "Preferred payment gateway (PayFast, Yoco, or Peach Payments) and shipping setup \u2014 flat rates, courier integration (Bob Go, Pargo), or manual configuration."
+    },
+    {
+      "title": "SEO Inputs",
+      "text": "Any existing keyword research, Google Analytics/Search Console access, and a list of your top competitors so we can hit the ground running on SEO strategy."
+    },
+    {
+      "title": "Sign-Off & Deposit",
+      "text": "Signed proposal and 50% deposit on the migration build (R29,000) to lock in the timeline. SEO retainer kicks in from the month of launch."
+    }
+  ]
+}

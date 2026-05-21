@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Honey Whale — Proposal Generator</title>
+  <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=satoshi@900,700,400&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
+  <link rel="stylesheet" href="/static/css/style.css?v=3" />
+</head>
+<body>
+  <div class="page-wrapper">
+    <header>
+      <div class="logo">
+        <!-- Replace the path below with the actual HW whale SVG mark if available -->
+        <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="28" height="28" rx="6" fill="#F7D046"/>
+          <text x="14" y="19" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="900" fill="#0F1115">HW</text>
+        </svg>
+        <span class="logo-wordmark">HONEY<strong>WHALE</strong></span>
+      </div>
+      <h1>Proposal Generator</h1>
+      <p class="subtitle">Fill in the brief. A branded PPTX will be generated and saved to Drive.</p>
+    </header>
+
+    <form id="proposal-form">
+
+      <div class="form-section">
+        <div class="section-label">Prospect</div>
+        <div class="field">
+          <label for="prospect_name">Company name <span class="req">*</span></label>
+          <input type="text" id="prospect_name" name="prospect_name" required placeholder="e.g. Litehouse" />
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="website_url">Website URL</label>
+            <input type="url" id="website_url" name="website_url" placeholder="https://example.co.za" />
+          </div>
+          <div class="field">
+            <label for="industry">Industry</label>
+            <input type="text" id="industry" name="industry" placeholder="e.g. Health & Beauty" />
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="section-label">Services</div>
+        <p class="hint">Select all that apply — Claude will scope and price from the rate card.</p>
+        <div class="checkbox-grid">
+          <label><input type="checkbox" name="services" value="Shopify Theme Build" /> Shopify Theme Build</label>
+          <label><input type="checkbox" name="services" value="Shopify Custom Build" /> Shopify Custom Build</label>
+          <label><input type="checkbox" name="services" value="WooCommerce Migration" /> WooCommerce Migration</label>
+          <label><input type="checkbox" name="services" value="Custom Shopify Project" /> Custom Shopify Project</label>
+          <label><input type="checkbox" name="services" value="Post-Launch Support" /> Post-Launch Support</label>
+          <label><input type="checkbox" name="services" value="E-Commerce SEO" /> E-Commerce SEO</label>
+          <label><input type="checkbox" name="services" value="AEO / GEO" /> AEO / GEO</label>
+          <label><input type="checkbox" name="services" value="Local SEO" /> Local SEO</label>
+          <label><input type="checkbox" name="services" value="Google Ads" /> Google Ads</label>
+          <label><input type="checkbox" name="services" value="Meta Ads" /> Meta Ads</label>
+          <label><input type="checkbox" name="services" value="Search Dominance Bundle" /> Search Dominance Bundle</label>
+          <label><input type="checkbox" name="services" value="Server-Side Tracking" /> Server-Side Tracking</label>
+          <label><input type="checkbox" name="services" value="CRO Audit" /> CRO Audit</label>
+          <label><input type="checkbox" name="services" value="Page Speed Optimisation" /> Page Speed Optimisation</label>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="section-label">People</div>
+        <div class="field-row">
+          <div class="field">
+            <label for="contact_name">Prospect contact <span class="req">*</span></label>
+            <input type="text" id="contact_name" name="contact_name" required placeholder="e.g. Sarah" />
+          </div>
+          <div class="field">
+            <label for="account_manager">HW account manager <span class="req">*</span></label>
+            <input type="text" id="account_manager" name="account_manager" required placeholder="e.g. Brad" />
+          </div>
+        </div>
+        <div class="field">
+          <label for="account_manager_email">Account manager email <span class="req">*</span></label>
+          <input type="email" id="account_manager_email" name="account_manager_email" required placeholder="brad@honeywhale.co.za" />
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="section-label">Sales Notes</div>
+        <div class="field">
+          <label for="sales_notes">Call notes, pain points, goals, context</label>
+          <textarea id="sales_notes" name="sales_notes"
+            placeholder="Paste your call notes here. The more context, the sharper the proposal."></textarea>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="submit" id="submit-btn">Generate proposal</button>
+        <span class="actions-note">Takes ~30 seconds</span>
+      </div>
+
+      <div id="result" class="result hidden"></div>
+
+    </form>
+  </div>
+
+  <script src="/static/js/main.js?v=2"></script>
+</body>
+</html>
