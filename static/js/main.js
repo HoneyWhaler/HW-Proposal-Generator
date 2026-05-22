@@ -39,37 +39,54 @@ form.addEventListener('submit', async (e) => {
     const decoder = new TextDecoder();
     let buffer = '';
 
+    // Returns true if the stream should stop (done or error event handled)
+    const handlePayload = (payload) => {
+      if (payload.step === 'error') {
+        showResult('error', `<h3>Error</h3><p>${escapeHtml(payload.message)}</p>`);
+        setLoading(false);
+        return true;
+      }
+      if (payload.step === 'done') {
+        const { drive_link, prospect } = payload.data;
+        showResult('success', `
+          <h3>${escapeHtml(prospect)} — proposal ready</h3>
+          <p><a href="${drive_link}" target="_blank" rel="noopener">Open in Google Drive →</a></p>
+        `);
+        setLoading(false);
+        return true;
+      }
+      showProgress(payload.step, payload.message);
+      return false;
+    };
+
+    const processLines = (lines) => {
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const payload = JSON.parse(line.slice(6));
+          if (handlePayload(payload)) return true;
+        } catch (e) {
+          // Partial or malformed line — skip and continue
+          console.warn('SSE parse skip:', line);
+        }
+      }
+      return false;
+    };
+
     while (true) {
       const { value, done } = await reader.read();
-      if (done) break;
+
+      if (done) {
+        // Flush any content left in the buffer (e.g. final "done" event with no trailing newline)
+        if (buffer.trim()) processLines([buffer.trim()]);
+        break;
+      }
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop(); // keep incomplete line in buffer
 
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const payload = JSON.parse(line.slice(6));
-
-        if (payload.step === 'error') {
-          showResult('error', `<h3>Error</h3><p>${escapeHtml(payload.message)}</p>`);
-          setLoading(false);
-          return;
-        }
-
-        if (payload.step === 'done') {
-          const { drive_link, prospect } = payload.data;
-          showResult('success', `
-            <h3>${escapeHtml(prospect)} — proposal ready</h3>
-            <p><a href="${drive_link}" target="_blank" rel="noopener">Open in Google Drive →</a></p>
-          `);
-          setLoading(false);
-          return;
-        }
-
-        // Update progress for intermediate steps
-        showProgress(payload.step, payload.message);
-      }
+      if (processLines(lines)) return;
     }
 
   } catch (err) {
