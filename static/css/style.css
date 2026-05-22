@@ -306,6 +306,52 @@ button[type="submit"]:disabled {
   text-decoration: underline;
 }
 
+/* Progress steps */
+.result.progress {
+  border-color: var(--border);
+}
+
+.progress-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.progress-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--muted);
+  transition: color 0.2s;
+}
+
+.progress-step.active {
+  color: var(--text);
+}
+
+.progress-step.done {
+  color: var(--muted);
+}
+
+.step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+
+.progress-step.active .step-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(247, 208, 70, 0.2);
+}
+
+.progress-step.done .step-dot {
+  background: var(--muted);
+}
+
 /* Spinner */
 .spinner {
   display: inline-block;
