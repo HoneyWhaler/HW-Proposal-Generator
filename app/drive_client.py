@@ -6,17 +6,26 @@ Service accounts have no storage quota of their own, so uploads to shared
 folders fail with a 403 even when the folder is correctly shared.
 OAuth2 uploads as your real Google account — no quota issues.
 
-FIRST-TIME SETUP:
+FIRST-TIME LOCAL SETUP:
 1. In Google Cloud Console → APIs & Services → Credentials
 2. Create Credentials → OAuth client ID → Desktop app → Download JSON
 3. Rename the file to oauth_credentials.json and place it in the project root
-4. Run the app — a browser window will open once for you to authorise
-5. A token.pickle file is saved — subsequent runs use it silently
+4. Run `python scripts/generate_token.py` — a browser window opens for you to authorise
+5. A token.pickle file is saved locally
+
+RAILWAY / SERVER SETUP (no browser available):
+1. Complete local setup above first so token.pickle exists
+2. Run: python scripts/encode_token.py
+   This prints a base64 string — copy it
+3. In Railway → Variables, add: GOOGLE_TOKEN_PICKLE_B64 = <paste the string>
+4. On startup the app decodes the env var and writes token.pickle automatically
+5. Tokens auto-refresh, so you only need to do this once (unless you revoke access)
 
 Both oauth_credentials.json and token.pickle are in .gitignore.
 """
 
 import os
+import base64
 import pickle
 from pathlib import Path
 from googleapiclient.discovery import build
@@ -29,7 +38,22 @@ TOKEN_FILE = Path("token.pickle")
 CREDENTIALS_FILE = Path("oauth_credentials.json")
 
 
+def _bootstrap_token_from_env():
+    """
+    On Railway (or any server), token.pickle can't be generated interactively.
+    If GOOGLE_TOKEN_PICKLE_B64 is set, decode it and write token.pickle so the
+    rest of the auth flow works as normal. Only runs if token.pickle doesn't exist.
+    """
+    b64 = os.environ.get("GOOGLE_TOKEN_PICKLE_B64", "").strip()
+    if b64 and not TOKEN_FILE.exists():
+        with open(TOKEN_FILE, "wb") as f:
+            f.write(base64.b64decode(b64))
+
+
 def _get_service():
+    # Decode token from env var if running on Railway and no local token exists
+    _bootstrap_token_from_env()
+
     creds = None
 
     if TOKEN_FILE.exists():
@@ -38,20 +62,23 @@ def _get_service():
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
+            # Silently refresh — this works on Railway with no browser
             creds.refresh(Request())
+            with open(TOKEN_FILE, "wb") as f:
+                pickle.dump(creds, f)
         else:
             if not CREDENTIALS_FILE.exists():
                 raise FileNotFoundError(
                     "oauth_credentials.json not found in the project root. "
-                    "Download it from Google Cloud Console → Credentials → OAuth client ID."
+                    "Download it from Google Cloud Console → Credentials → OAuth client ID.\n"
+                    "On Railway: set GOOGLE_TOKEN_PICKLE_B64 (run scripts/encode_token.py locally to get it)."
                 )
             flow = InstalledAppFlow.from_client_secrets_file(
                 str(CREDENTIALS_FILE), SCOPES
             )
             creds = flow.run_local_server(port=0)
-
-        with open(TOKEN_FILE, "wb") as f:
-            pickle.dump(creds, f)
+            with open(TOKEN_FILE, "wb") as f:
+                pickle.dump(creds, f)
 
     return build("drive", "v3", credentials=creds)
 
