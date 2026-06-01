@@ -5,8 +5,7 @@ const result = document.getElementById('result');
 const STEPS = {
   diagnosing: 'Researching prospect website…',
   writing:    'Writing proposal content…',
-  building:   'Building the deck…',
-  uploading:  'Uploading to Google Drive…',
+  building:   'Building in Google Slides…',
   done:       'Done.',
   error:      'Something went wrong.',
 };

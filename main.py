@@ -3,19 +3,14 @@ Honey Whale Proposal Generator
 FastAPI entry point.
 
 Uses Server-Sent Events (SSE) to stream live progress updates to the browser
-during the two-step generation pipeline:
-  1. Fetch & analyse prospect website
-  2. Generate diagnosis
-  3. Write proposal content
-  4. Build PPTX
-  5. Upload to Google Drive
+during the generation pipeline:
+  1. Fetch & analyse prospect website  → diagnose()
+  2. Write proposal content            → generate_proposal_content()
+  3. Build Google Slides deck in Drive → generate_slides()
 """
 
 import os
 import json
-import asyncio
-from pathlib import Path
-from datetime import datetime
 from typing import List
 
 from fastapi import FastAPI, Request, Form
@@ -25,17 +20,13 @@ from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
 
 from app.claude_client import diagnose, generate_proposal_content
-from app.pptx_generator import generate_pptx
-from app.drive_client import upload_proposal
+from app.slides_generator import generate_slides
 
 load_dotenv()
 
 app = FastAPI(title="HW Proposal Generator")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
-
-GENERATED_DIR = Path("generated")
-GENERATED_DIR.mkdir(exist_ok=True)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -114,23 +105,13 @@ async def generate(
             yield send("writing", "Writing proposal content...")
             proposal = generate_proposal_content(brief, diagnosis)
 
-            # Step 3 — Build PPTX
-            yield send("building", "Building the deck...")
-            date_str = datetime.now().strftime("%Y-%m-%d")
-            filename = f"HW Proposal — {prospect_name} — {date_str}.pptx"
-            output_path = GENERATED_DIR / filename
-            generate_pptx(proposal, brief, output_path)
-
-            # Step 4 — Upload to Drive
-            yield send("uploading", "Uploading to Google Drive...")
-            drive_link = upload_proposal(output_path, prospect_name)
-
-            # Clean up local file
-            output_path.unlink(missing_ok=True)
+            # Step 3 — Build Google Slides deck and save to Drive
+            yield send("building", "Building your proposal in Google Slides...")
+            slides_link = generate_slides(proposal, brief)
 
             # Done
             yield send("done", "Proposal ready.", {
-                "drive_link": drive_link,
+                "drive_link": slides_link,
                 "prospect": prospect_name,
             })
 
