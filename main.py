@@ -98,16 +98,22 @@ async def generate(
 
         try:
             # Step 1 — Diagnose
+            print(f"[pipeline] START diagnose: {prospect_name}", flush=True)
             yield send("diagnosing", f"Researching {prospect_name}...")
             diagnosis = diagnose(brief)
+            print(f"[pipeline] DONE diagnose", flush=True)
 
             # Step 2 — Generate proposal content
+            print(f"[pipeline] START generate_proposal_content", flush=True)
             yield send("writing", "Writing proposal content...")
             proposal = generate_proposal_content(brief, diagnosis)
+            print(f"[pipeline] DONE generate_proposal_content", flush=True)
 
             # Step 3 — Build Google Slides deck and save to Drive
+            print(f"[pipeline] START generate_slides", flush=True)
             yield send("building", "Building your proposal in Google Slides...")
             slides_link = generate_slides(proposal, brief)
+            print(f"[pipeline] DONE generate_slides: {slides_link}", flush=True)
 
             # Done
             yield send("done", "Proposal ready.", {
@@ -116,6 +122,7 @@ async def generate(
             })
 
         except Exception as e:
+            print(f"[pipeline] ERROR: {e}", flush=True)
             yield send("error", str(e))
 
     return StreamingResponse(
