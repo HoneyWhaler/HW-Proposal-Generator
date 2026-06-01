@@ -170,6 +170,12 @@ STRICT RULES:
 - Realities always has exactly 3 items.
 - Deliverables always has exactly 4 columns.
 - To get started always has exactly 6 items.
+- scope_of_work: one entry per major recommended service, max 3 entries.
+- CONDITIONAL SLIDES — only include these keys if the relevant service is in the brief:
+    why_shopify    → include if Shopify build, theme, migration, or store work is selected
+    why_seo        → include if SEO is selected
+    why_google_ads → include if Google Ads or paid search is selected
+  If a service is NOT selected, omit the key entirely from the JSON.
 
 LAYOUT CONSTRAINTS (slide text boxes — content must fit):
 - plan[].title: max 3 words. e.g. "Foundation", "Store Build", "SEO & Content".
@@ -182,6 +188,11 @@ LAYOUT CONSTRAINTS (slide text boxes — content must fit):
 - brand_summary: max 3 sentences.
 - timeline: max 2 sentences.
 - out_of_scope: comma-separated list, max 80 characters total.
+- why_x.heading: max 2 sentences. Specific to this prospect — not generic.
+- why_x.items / why_x.hw_items: exactly 4 items each. Max 60 characters per item.
+- scope_of_work[].title: max 4 words — the service name.
+- scope_of_work[].description: max 2 sentences. What this service covers for this client.
+- scope_of_work[].items: up to 6 specific deliverables or tasks. Max 60 characters each.
 
 ---
 HONEY WHALE SERVICES:
@@ -237,7 +248,32 @@ Return only valid JSON matching this schema exactly. No markdown.
     {{"title": "string", "text": "string"}},
     {{"title": "string", "text": "string"}},
     {{"title": "string", "text": "string"}}
-  ]
+  ],
+
+  "scope_of_work": [
+    {{
+      "title": "string — service name, max 4 words",
+      "description": "string — max 2 sentences, specific to this client",
+      "items": ["string — specific deliverable or task", "string", "string"]
+    }}
+  ],
+
+  "why_shopify": {{
+    "heading": "string — max 2 sentences, specific to why Shopify fits this prospect",
+    "items": ["string — max 60 chars", "string", "string", "string"]
+  }},
+
+  "why_seo": {{
+    "heading": "string — max 2 sentences, why SEO is the right move for this prospect now",
+    "items": ["string — max 60 chars", "string", "string", "string"],
+    "hw_items": ["string — why Honey Whale specifically for SEO", "string", "string", "string"]
+  }},
+
+  "why_google_ads": {{
+    "heading": "string — max 2 sentences, why Google Ads fits this prospect",
+    "items": ["string — max 60 chars", "string", "string", "string"],
+    "hw_items": ["string — why Honey Whale specifically for Google Ads", "string", "string", "string"]
+  }}
 }}
 """.strip()
 
