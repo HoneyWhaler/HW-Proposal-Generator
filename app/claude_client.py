@@ -89,7 +89,7 @@ def _fetch_website(url: str) -> str:
         if not url.startswith("http"):
             url = "https://" + url
         headers = {"User-Agent": "Mozilla/5.0 (compatible; HWProposalBot/1.0)"}
-        resp = httpx.get(url, headers=headers, timeout=15, follow_redirects=True)
+        resp = httpx.get(url, headers=headers, timeout=httpx.Timeout(15.0, connect=5.0), follow_redirects=True)
         text = resp.text
 
         # Strip tags crudely — good enough for analysis
@@ -110,7 +110,8 @@ def diagnose(brief: dict) -> dict:
     Step 1: Fetches the prospect's website and produces a structured diagnosis.
     Returns a diagnosis dict.
     """
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    # Sonnet is fast enough for research/diagnosis; timeout prevents silent hangs
+    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"], timeout=90.0)
 
     website_content = _fetch_website(brief.get("website_url", ""))
 
@@ -134,7 +135,7 @@ Sales notes:
 """.strip()
 
     message = client.messages.create(
-        model="claude-opus-4-6",
+        model="claude-sonnet-4-6",
         max_tokens=2048,
         system=DIAGNOSIS_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_message}],
@@ -282,7 +283,8 @@ def generate_proposal_content(brief: dict, diagnosis: dict) -> dict:
     """
     Step 2: Takes the brief + diagnosis and returns the full proposal JSON.
     """
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    # Opus for proposal writing; timeout prevents silent hangs on Railway
+    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"], timeout=180.0)
 
     user_message = f"""
 Generate a proposal for this prospect.
