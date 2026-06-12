@@ -195,8 +195,7 @@ LAYOUT CONSTRAINTS (slide text boxes — content must fit):
 - brand_summary: max 3 sentences.
 - timeline: max 2 sentences.
 - out_of_scope: comma-separated list, max 80 characters total.
-- why_x.heading: max 2 sentences. Specific to this prospect — not generic.
-- why_x.items / why_x.hw_items: exactly 4 items each. Max 60 characters per item.
+- why_x.items / why_x.hw_items: exactly 4 items each. Max 60 characters per item. Each item is one sharp, specific point — not a sentence fragment or a heading.
 - scope_of_work[].title: max 4 words — the service name.
 - scope_of_work[].description: max 2 sentences. What this service covers for this client.
 - scope_of_work[].items: up to 6 specific deliverables or tasks. Max 60 characters each.
@@ -266,20 +265,17 @@ Return only valid JSON matching this schema exactly. No markdown.
   ],
 
   "why_shopify": {{
-    "heading": "string — max 2 sentences, specific to why Shopify fits this prospect",
-    "items": ["string — max 60 chars", "string", "string", "string"]
+    "items": ["string — max 60 chars, one sharp reason why Shopify fits this prospect", "string", "string", "string"]
   }},
 
   "why_seo": {{
-    "heading": "string — max 2 sentences, why SEO is the right move for this prospect now",
-    "items": ["string — max 60 chars", "string", "string", "string"],
-    "hw_items": ["string — why Honey Whale specifically for SEO", "string", "string", "string"]
+    "items": ["string — max 60 chars, one sharp reason why SEO is right for this prospect now", "string", "string", "string"],
+    "hw_items": ["string — max 60 chars, one specific reason why Honey Whale for SEO", "string", "string", "string"]
   }},
 
   "why_google_ads": {{
-    "heading": "string — max 2 sentences, why Google Ads fits this prospect",
-    "items": ["string — max 60 chars", "string", "string", "string"],
-    "hw_items": ["string — why Honey Whale specifically for Google Ads", "string", "string", "string"]
+    "items": ["string — max 60 chars, one sharp reason why Google Ads fits this prospect", "string", "string", "string"],
+    "hw_items": ["string — max 60 chars, one specific reason why Honey Whale for Google Ads", "string", "string", "string"]
   }}
 }}
 """.strip()

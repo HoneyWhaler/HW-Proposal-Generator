@@ -247,18 +247,16 @@ def build_context(proposal: dict, brief: dict) -> dict:
         ctx[f"START_ITEM_{i}_TITLE"] = s.get("title", "")
         ctx[f"START_ITEM_{i}_TEXT"]  = s.get("text", "")
 
-    # Why Shopify (conditional)
+    # Why Shopify (conditional) — slide headings are hardcoded in template, items only
     why_shopify = proposal.get("why_shopify", {})
-    ctx["WHY_SHOPIFY"] = why_shopify.get("heading", "")
     items = why_shopify.get("items", [])
     for i, item in enumerate(items[:4], 1):
         ctx[f"WHY_SHOPIFY_ITEM_{i}"] = item
     for i in range(len(items) + 1, 5):
         ctx[f"WHY_SHOPIFY_ITEM_{i}"] = ""
 
-    # Why SEO (conditional)
+    # Why SEO (conditional) — slide headings are hardcoded in template, items only
     why_seo = proposal.get("why_seo", {})
-    ctx["WHY_SEO"] = why_seo.get("heading", "")
     items = why_seo.get("items", [])
     for i, item in enumerate(items[:4], 1):
         ctx[f"WHY_SEO_ITEM_{i}"] = item
@@ -270,9 +268,8 @@ def build_context(proposal: dict, brief: dict) -> dict:
     for i in range(len(hw_items) + 1, 5):
         ctx[f"WHY_HW_SEO_ITEM_{i}"] = ""
 
-    # Why Google Ads (conditional)
+    # Why Google Ads (conditional) — slide headings are hardcoded in template, items only
     why_ads = proposal.get("why_google_ads", {})
-    ctx["WHY_GOOGLE_ADS"] = why_ads.get("heading", "")
     items = why_ads.get("items", [])
     for i, item in enumerate(items[:4], 1):
         ctx[f"WHY_GOOGLE_ADS_ITEM_{i}"] = item
