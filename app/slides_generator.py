@@ -4,23 +4,28 @@ Google Slides proposal generator — dynamic slide assembly.
 FLOW:
 1. Copy the master Slides template into the prospect's Drive folder
 2. Parse each slide's SLIDE_TYPE from its speaker notes
-3. Delete slides not relevant to this proposal (conditional service slides,
-   excess SOW slides)
+3. Delete service slides not relevant to this proposal
 4. Replace all {{TOKEN}} placeholders globally (proposal content)
 5. Replace {{SLIDE_LABEL}} and {{PAGE_NUMBER}} per-slide (unique per slide)
 6. Return the editable Google Slides URL
 
-SLIDE TYPES (from speaker notes — "SLIDE_TYPE: <type>"):
-  always included:
-    cover, proposal_at_a_glance, brand_summary, three_realities, the_plan,
-    what_it_costs, your_investment, what_you_get, deliverables_list, sow_1,
-    how_we_work, next_steps, about_hw, sign_off
-  conditional:
-    why_shopify  — included when Shopify services are selected
-    why_seo      — included when SEO is selected
-    why_google_ads — included when Google Ads / paid search is selected
-    sow_2        — included when scope_of_work has 2+ entries
-    sow_3        — included when scope_of_work has 3 entries
+SLIDE TYPES (add to speaker notes in the Google Slides template):
+  Always included:
+    cover, overview, where_now, realities, the_plan, investment,
+    proof, about_hw, how_we_work, sign_off
+
+  Conditional — WHY slides (deleted when service not selected):
+    why_shopify     → Shopify Theme Build, Custom Build, WooCommerce Migration, Custom Project
+    why_google_ads  → Google Ads, Meta Ads, Search Dominance
+    why_seo         → E-commerce SEO, Service-Based SEO, Local SEO, AEO/GEO, Technical SEO Sprint
+
+  Conditional — SOW slides (deleted when service not selected):
+    sow_seo_aeo_audit, sow_ecommerce_seo, sow_service_based_seo, sow_local_seo,
+    sow_aeo_geo, sow_google_ads, sow_meta_ads, sow_ppc_landing_pages,
+    sow_search_dominance, sow_shopify_theme_build, sow_shopify_custom_build,
+    sow_woocommerce_migration, sow_custom_shopify, sow_post_launch_support,
+    sow_dev_blocs, sow_page_speed, sow_cro_audit, sow_colp,
+    sow_server_side_tracking, sow_technical_seo_sprint
 
 ENV VARS REQUIRED:
   GOOGLE_SLIDES_TEMPLATE_ID   — ID from the template Slides URL
@@ -44,25 +49,79 @@ TOKEN_FILE = Path("token.pickle")
 # ---------------------------------------------------------------------------
 
 SLIDE_LABELS = {
-    "cover":                "",
-    "proposal_at_a_glance": "ENGAGEMENT",
-    "brand_summary":        "WHERE YOU ARE NOW",
-    "three_realities":      "WHERE YOU ARE NOW",
-    "the_plan":             "THE PLAN",
-    "why_shopify":          "WHY SHOPIFY",
-    "why_seo":              "WHY SEO",
-    "why_google_ads":       "WHY GOOGLE ADS",
-    "what_it_costs":        "INVESTMENT",
-    "your_investment":      "INVESTMENT",
-    "what_you_get":         "DELIVERABLES",
-    "deliverables_list":    "DELIVERABLES",
-    "sow_1":                "SCOPE OF WORK",
-    "sow_2":                "SCOPE OF WORK",
-    "sow_3":                "SCOPE OF WORK",
-    "how_we_work":          "HOW WE WORK",
-    "next_steps":           "NEXT STEPS",
-    "about_hw":             "ABOUT HONEY WHALE",
-    "sign_off":             "",
+    "cover":                    "",
+    "overview":                 "OVERVIEW",
+    "where_now":                "WHERE YOU ARE NOW",
+    "realities":                "WHERE YOU ARE NOW",
+    "the_plan":                 "THE PLAN",
+    "why_shopify":              "WHY",
+    "why_google_ads":           "WHY",
+    "why_seo":                  "WHY",
+    "sow_seo_aeo_audit":        "SCOPE OF WORK",
+    "sow_ecommerce_seo":        "SCOPE OF WORK",
+    "sow_service_based_seo":    "SCOPE OF WORK",
+    "sow_local_seo":            "SCOPE OF WORK",
+    "sow_aeo_geo":              "SCOPE OF WORK",
+    "sow_google_ads":           "SCOPE OF WORK",
+    "sow_meta_ads":             "SCOPE OF WORK",
+    "sow_ppc_landing_pages":    "SCOPE OF WORK",
+    "sow_search_dominance":     "SCOPE OF WORK",
+    "sow_shopify_theme_build":  "SCOPE OF WORK",
+    "sow_shopify_custom_build": "SCOPE OF WORK",
+    "sow_woocommerce_migration":"SCOPE OF WORK",
+    "sow_custom_shopify":       "SCOPE OF WORK",
+    "sow_post_launch_support":  "SCOPE OF WORK",
+    "sow_dev_blocs":            "SCOPE OF WORK",
+    "sow_page_speed":           "SCOPE OF WORK",
+    "sow_cro_audit":            "SCOPE OF WORK",
+    "sow_colp":                 "SCOPE OF WORK",
+    "sow_server_side_tracking": "SCOPE OF WORK",
+    "sow_technical_seo_sprint": "SCOPE OF WORK",
+    "investment":               "SUMMARY",
+    "proof":                    "PROOF",
+    "about_hw":                 "ABOUT",
+    "how_we_work":              "TERMS",
+    "sign_off":                 "ACCEPTANCE",
+}
+
+
+# ---------------------------------------------------------------------------
+# Service slide keywords — a slide is DELETED if none of its keywords
+# appear in the selected services list.
+# ---------------------------------------------------------------------------
+
+SERVICE_SLIDE_KEYWORDS = {
+    "why_shopify": [
+        "shopify theme build", "shopify custom build",
+        "woocommerce migration", "custom shopify",
+    ],
+    "why_google_ads": [
+        "google ads", "meta ads", "search dominance",
+    ],
+    "why_seo": [
+        "e-commerce seo", "service-based seo", "local seo",
+        "aeo", "geo", "technical seo sprint",
+    ],
+    "sow_seo_aeo_audit":        ["seo/aeo audit", "seo audit"],
+    "sow_ecommerce_seo":        ["e-commerce seo"],
+    "sow_service_based_seo":    ["service-based seo", "service based seo"],
+    "sow_local_seo":            ["local seo"],
+    "sow_aeo_geo":              ["aeo / geo", "aeo/geo", "aeo", "geo"],
+    "sow_google_ads":           ["google ads"],
+    "sow_meta_ads":             ["meta ads"],
+    "sow_ppc_landing_pages":    ["ppc landing page"],
+    "sow_search_dominance":     ["search dominance"],
+    "sow_shopify_theme_build":  ["shopify theme build"],
+    "sow_shopify_custom_build": ["shopify custom build"],
+    "sow_woocommerce_migration":["woocommerce migration"],
+    "sow_custom_shopify":       ["custom shopify project"],
+    "sow_post_launch_support":  ["post-launch support", "post launch support"],
+    "sow_dev_blocs":            ["dev bloc"],
+    "sow_page_speed":           ["page speed"],
+    "sow_cro_audit":            ["cro audit"],
+    "sow_colp":                 ["colp", "conversion-optimised landing page"],
+    "sow_server_side_tracking": ["server-side tracking", "server side tracking"],
+    "sow_technical_seo_sprint": ["technical seo sprint"],
 }
 
 
@@ -141,7 +200,6 @@ def _get_slide_notes(slide: dict) -> str:
                 te.get("textRun", {}).get("content", "")
                 for te in text_obj.get("textElements", [])
             ).strip()
-            # The speaker notes element is the one that contains our tags
             if "SLIDE_TYPE:" in text:
                 return text
     except Exception:
@@ -161,34 +219,22 @@ def _parse_note_field(notes: str, field: str) -> str:
 # Service detection & slide deletion
 # ---------------------------------------------------------------------------
 
-def _services_include(services: list, *keywords) -> bool:
-    """True if any keyword appears in the joined services list."""
-    joined = " ".join(services).lower()
-    return any(kw.lower() in joined for kw in keywords)
-
-
 def _get_slides_to_delete(slide_info: list, brief: dict, proposal: dict) -> list:
     """
     Returns slide object IDs that should be removed for this proposal.
-    Conditional slides are deleted when the relevant service isn't selected.
-    Excess SOW slides are deleted when scope_of_work has fewer than 3 entries.
+    Any slide whose SLIDE_TYPE is in SERVICE_SLIDE_KEYWORDS is deleted
+    unless at least one of its keywords appears in the selected services.
     """
-    services  = brief.get("services", [])
-    sow_count = len(proposal.get("scope_of_work", []))
-
-    # Maps slide type → True if it should be deleted
-    delete_rules = {
-        "why_shopify":    not _services_include(services, "shopify", "theme", "migration", "store build", "replatform"),
-        "why_seo":        not _services_include(services, "seo", "search engine"),
-        "why_google_ads": not _services_include(services, "google ads", "paid search", "ppc", "performance max"),
-        "sow_2":          sow_count < 2,
-        "sow_3":          sow_count < 3,
-    }
+    joined_services = " ".join(brief.get("services", [])).lower()
 
     return [
         slide["id"]
         for slide in slide_info
-        if delete_rules.get(slide["type"], False)
+        if slide["type"] in SERVICE_SLIDE_KEYWORDS
+        and not any(
+            kw.lower() in joined_services
+            for kw in SERVICE_SLIDE_KEYWORDS[slide["type"]]
+        )
     ]
 
 
@@ -203,94 +249,61 @@ def _bullet_list(items: list) -> str:
 def build_context(proposal: dict, brief: dict) -> dict:
     """
     Flat {TOKEN: value} map for all global replacements.
-    SLIDE_LABEL and PAGE_NUMBER are NOT in here — they're applied per-slide.
+    SLIDE_LABEL and PAGE_NUMBER are applied per-slide separately.
     """
     ctx = {}
 
     # Cover / meta
-    ctx["PROSPECT_NAME"]         = proposal.get("prospect_name", brief.get("prospect_name", ""))
-    ctx["CONTACT_NAME"]          = brief.get("contact_name", "")
-    ctx["ACCOUNT_MANAGER"]       = brief.get("account_manager", "")
-    ctx["ACCOUNT_MANAGER_EMAIL"] = brief.get("account_manager_email", "")
-    ctx["START_DATE"]            = proposal.get("start_date", "TBC")
-    ctx["CURRENT_MONTH"]         = datetime.now().strftime("%B %Y").upper()
-    ctx["BRAND_SUMMARY"]         = proposal.get("brand_summary", "")
+    ctx["PROSPECT_NAME"]          = proposal.get("prospect_name", brief.get("prospect_name", ""))
+    ctx["CONTACT_NAME"]           = brief.get("contact_name", "")
+    ctx["ACCOUNT_MANAGER"]        = brief.get("account_manager", "")
+    ctx["ACCOUNT_MANAGER_EMAIL"]  = brief.get("account_manager_email", "")
+    ctx["START_DATE"]             = proposal.get("start_date", "TBC")
+    ctx["MONTH"]                  = datetime.now().strftime("%B").upper()
+    ctx["ENGAGEMENT_SUMMARY"]     = proposal.get("engagement_summary", "")
 
-    # Realities — 3 items
+    # Where You Are Now
+    ctx["WHERE_NOW_TITLE"]        = proposal.get("where_now_title", "")
+    ctx["BRAND_SUMMARY"]          = proposal.get("brand_summary", "")
+    ctx["KEY_STAT"]               = proposal.get("key_stat", "")
+    ctx["KEY_STAT_LABEL"]         = proposal.get("key_stat_label", "")
+    # Placeholder for a product/store image — filled manually by account manager
+    ctx["PRODUCT_OR_STORE_IMAGE"] = ""
+
+    # Realities — always 3
     for i, r in enumerate(proposal.get("realities", [{}, {}, {}])[:3], 1):
         ctx[f"REALITY_{i}_TITLE"] = r.get("title", "")
-        ctx[f"REALITY_{i}_TEXT"]  = r.get("text", "")
+        ctx[f"REALITY_{i}_BODY"]  = r.get("body", "")
 
-    # Plan — 5 phases, bullets joined into one string per phase
+    # Plan — always 5 phases
     for i, p in enumerate(proposal.get("plan", [{}, {}, {}, {}, {}])[:5], 1):
-        ctx[f"PLAN_{i}_TITLE"] = p.get("title", "")
-        ctx[f"PLAN_{i}_ITEMS"] = _bullet_list(p.get("items", []))
+        ctx[f"PHASE_{i}_TITLE"] = p.get("title", "")
+        ctx[f"PHASE_{i}_TIME"]  = p.get("time", "")
+        ctx[f"PHASE_{i}_ITEMS"] = _bullet_list(p.get("items", []))
 
-    # Investment
+    # Investment — up to 2 monthly retainers, up to 3 one-offs
     cost = proposal.get("cost", {})
-    ctx["COST_LINE_1_NAME"]  = cost.get("line_1_name", "")
-    ctx["COST_LINE_1_DESC"]  = cost.get("line_1_desc", "")
-    ctx["COST_LINE_1_PRICE"] = cost.get("line_1_price", "")
-    ctx["TOTAL_INVESTMENT"]  = cost.get("total", "")
 
-    # Deliverables — 4 columns, bullets joined per column
-    for i, d in enumerate(proposal.get("deliverables", [{}, {}, {}, {}])[:4], 1):
-        ctx[f"DELIVERABLES_{i}_TITLE"] = d.get("title", "")
-        ctx[f"DELIVERABLES_{i}_ITEMS"] = _bullet_list(d.get("items", []))
+    monthly = cost.get("monthly", [])
+    for i, m in enumerate(monthly[:2], 1):
+        ctx[f"MONTHLY_{i}_NAME"]  = m.get("name", "")
+        ctx[f"MONTHLY_{i}_PRICE"] = m.get("price", "")
+    for i in range(len(monthly) + 1, 3):
+        ctx[f"MONTHLY_{i}_NAME"]  = ""
+        ctx[f"MONTHLY_{i}_PRICE"] = ""
+    ctx["MONTHLY_TOTAL"] = cost.get("monthly_total", "")
 
-    # Timeline & exclusions
-    ctx["TIMELINE"]     = proposal.get("timeline", "")
-    ctx["OUT_OF_SCOPE"] = proposal.get("out_of_scope", "")
+    oneoff = cost.get("oneoff", [])
+    for i, o in enumerate(oneoff[:3], 1):
+        ctx[f"ONEOFF_{i}_NAME"]  = o.get("name", "")
+        ctx[f"ONEOFF_{i}_PRICE"] = o.get("price", "")
+    for i in range(len(oneoff) + 1, 4):
+        ctx[f"ONEOFF_{i}_NAME"]  = ""
+        ctx[f"ONEOFF_{i}_PRICE"] = ""
+    ctx["ONEOFF_TOTAL"] = cost.get("oneoff_total", "")
 
-    # Next steps — 6 items
-    for i, s in enumerate(proposal.get("to_get_started", [])[:6], 1):
-        ctx[f"START_ITEM_{i}_TITLE"] = s.get("title", "")
-        ctx[f"START_ITEM_{i}_TEXT"]  = s.get("text", "")
-
-    # Why Shopify (conditional) — slide headings are hardcoded in template, items only
-    why_shopify = proposal.get("why_shopify", {})
-    items = why_shopify.get("items", [])
-    for i, item in enumerate(items[:4], 1):
-        ctx[f"WHY_SHOPIFY_ITEM_{i}"] = item
-    for i in range(len(items) + 1, 5):
-        ctx[f"WHY_SHOPIFY_ITEM_{i}"] = ""
-
-    # Why SEO (conditional) — slide headings are hardcoded in template, items only
-    why_seo = proposal.get("why_seo", {})
-    items = why_seo.get("items", [])
-    for i, item in enumerate(items[:4], 1):
-        ctx[f"WHY_SEO_ITEM_{i}"] = item
-    for i in range(len(items) + 1, 5):
-        ctx[f"WHY_SEO_ITEM_{i}"] = ""
-    hw_items = why_seo.get("hw_items", [])
-    for i, item in enumerate(hw_items[:4], 1):
-        ctx[f"WHY_HW_SEO_ITEM_{i}"] = item
-    for i in range(len(hw_items) + 1, 5):
-        ctx[f"WHY_HW_SEO_ITEM_{i}"] = ""
-
-    # Why Google Ads (conditional) — slide headings are hardcoded in template, items only
-    why_ads = proposal.get("why_google_ads", {})
-    items = why_ads.get("items", [])
-    for i, item in enumerate(items[:4], 1):
-        ctx[f"WHY_GOOGLE_ADS_ITEM_{i}"] = item
-    for i in range(len(items) + 1, 5):
-        ctx[f"WHY_GOOGLE_ADS_ITEM_{i}"] = ""
-    hw_items = why_ads.get("hw_items", [])
-    for i, item in enumerate(hw_items[:4], 1):
-        ctx[f"WHY_HW_GOOGLE_ADS_ITEM_{i}"] = item
-    for i in range(len(hw_items) + 1, 5):
-        ctx[f"WHY_HW_GOOGLE_ADS_ITEM_{i}"] = ""
-
-    # Scope of Work — up to 3 services, individual item tokens
-    for sow_idx, sow in enumerate(proposal.get("scope_of_work", [])[:3], 1):
-        ctx[f"SOW_{sow_idx}_TITLE"]       = sow.get("title", "")
-        ctx[f"SOW_{sow_idx}_DESCRIPTION"] = sow.get("description", "")
-        items = sow.get("items", [])
-        for i, item in enumerate(items[:6], 1):
-            ctx[f"SOW_{sow_idx}_ITEM_{i}"] = item
-        # Empty remaining item slots so orphan tokens don't render
-        for i in range(len(items) + 1, 7):
-            ctx[f"SOW_{sow_idx}_ITEM_{i}"] = ""
+    # Timeline
+    ctx["TIMELINE"] = proposal.get("timeline", "")
 
     return ctx
 
@@ -348,7 +361,6 @@ def generate_slides(proposal: dict, brief: dict) -> str:
                 ]
             },
         ).execute()
-        # Keep local info in sync
         slide_info = [s for s in slide_info if s["id"] not in ids_to_delete]
 
     # 4 — Build all replacement requests
