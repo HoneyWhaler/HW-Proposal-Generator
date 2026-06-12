@@ -10,10 +10,11 @@ during the generation pipeline:
 """
 
 import os
+import io
 import json
-from typing import List
+from typing import List, Optional
 
-from fastapi import FastAPI, Request, Form
+from fastapi import FastAPI, Request, Form, File, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -27,6 +28,41 @@ load_dotenv()
 app = FastAPI(title="HW Proposal Generator")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
+
+def _extract_doc_text(file: UploadFile) -> str:
+    """
+    Extracts plain text from an uploaded PDF or DOCX file.
+    Returns an empty string if extraction fails or no file was provided.
+    Truncated to ~8,000 chars to stay within reasonable context limits.
+    """
+    if not file or not file.filename:
+        return ""
+    try:
+        contents = file.file.read()
+        filename = file.filename.lower()
+
+        if filename.endswith(".pdf"):
+            import pdfplumber
+            text_parts = []
+            with pdfplumber.open(io.BytesIO(contents)) as pdf:
+                for page in pdf.pages:
+                    text = page.extract_text()
+                    if text:
+                        text_parts.append(text)
+            return "\n\n".join(text_parts)[:8000]
+
+        elif filename.endswith(".docx"):
+            from docx import Document
+            doc = Document(io.BytesIO(contents))
+            text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+            return text[:8000]
+
+        # Unsupported format — skip silently
+        return ""
+    except Exception as ex:
+        print(f"[doc_extract] Failed to extract text from {file.filename}: {ex}", flush=True)
+        return ""
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -75,7 +111,13 @@ async def generate(
     account_manager: str = Form(...),
     account_manager_email: str = Form(...),
     sales_notes: str = Form(""),
+    brief_doc: Optional[UploadFile] = File(None),
 ):
+    # Extract text from uploaded document (if any)
+    doc_context = _extract_doc_text(brief_doc) if brief_doc else ""
+    if doc_context:
+        print(f"[pipeline] Extracted {len(doc_context)} chars from uploaded doc: {brief_doc.filename}", flush=True)
+
     brief = {
         "prospect_name": prospect_name,
         "website_url": website_url,
@@ -85,6 +127,7 @@ async def generate(
         "account_manager": account_manager,
         "account_manager_email": account_manager_email,
         "sales_notes": sales_notes,
+        "doc_context": doc_context,
     }
 
     def event_stream():

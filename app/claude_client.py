@@ -121,6 +121,12 @@ def diagnose(brief: dict) -> dict:
         else "\n\nWEBSITE: Could not be fetched or URL not provided."
     )
 
+    doc_section = (
+        f"\n\nUPLOADED BRIEF / RFP DOCUMENT (use as additional context):\n{brief.get('doc_context', '')}"
+        if brief.get("doc_context")
+        else ""
+    )
+
     user_message = f"""
 Analyse this prospect:
 
@@ -131,7 +137,7 @@ Services requested: {", ".join(brief.get("services", []))}
 
 Sales notes:
 {brief.get("sales_notes", "No notes provided")}
-{website_section}
+{website_section}{doc_section}
 """.strip()
 
     message = client.messages.create(
@@ -286,6 +292,12 @@ def generate_proposal_content(brief: dict, diagnosis: dict) -> dict:
     # Opus for proposal writing; timeout prevents silent hangs on Railway
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"], timeout=180.0)
 
+    doc_section = (
+        f"\n\nUPLOADED BRIEF / RFP DOCUMENT (treat as primary source of requirements):\n{brief.get('doc_context', '')}"
+        if brief.get("doc_context")
+        else ""
+    )
+
     user_message = f"""
 Generate a proposal for this prospect.
 
@@ -297,6 +309,7 @@ Services: {", ".join(brief.get("services", []))}
 Contact: {brief.get("contact_name")}
 Account manager: {brief.get("account_manager")}
 Sales notes: {brief.get("sales_notes", "None")}
+{doc_section}
 
 DIAGNOSIS (use this to write specific, grounded copy):
 Summary: {diagnosis.get("prospect_summary", "")}
