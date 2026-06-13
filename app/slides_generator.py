@@ -9,6 +9,16 @@ FLOW:
 5. Replace {{SLIDE_LABEL}} and {{PAGE_NUMBER}} per-slide (unique per slide)
 6. Return the editable Google Slides URL
 
+IMAGE INSERTION
+  logo_url  — public URL of the prospect's logo.  Passed in from main.py which
+              caches the uploaded bytes and serves them at /images/{uuid}.
+              Replaces {{PROSPECT_NAME}} shapes on slides 1 & 2 only.
+  store_url — public URL of the product/store photo.  Same mechanism.
+              Replaces {{PRODUCT_OR_STORE_IMAGE}} globally.
+
+  We do NOT use Drive URLs for image insertion — the Slides API refuses to
+  follow Drive redirects.  The Railway app's own public endpoint is used instead.
+
 SLIDE TYPES (add to speaker notes in the Google Slides template):
   Always included:
     cover, overview, where_now, realities, the_plan, investment,
@@ -32,7 +42,6 @@ ENV VARS REQUIRED:
   GOOGLE_DRIVE_ROOT_FOLDER_ID — root folder where prospect subfolders live
 """
 
-import io
 import os
 import pickle
 import base64
@@ -41,7 +50,6 @@ from pathlib import Path
 from typing import Optional
 
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
 from google.auth.transport.requests import Request
 
 TOKEN_FILE = Path("token.pickle")
@@ -190,70 +198,6 @@ def _find_or_create_folder(service, name: str, parent_id: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Image upload helper
-# ---------------------------------------------------------------------------
-
-_IMAGE_MIME_TYPES = {
-    "png":  "image/png",
-    "jpg":  "image/jpeg",
-    "jpeg": "image/jpeg",
-    "webp": "image/webp",
-    "gif":  "image/gif",
-    # SVG intentionally excluded — not supported by the Slides API image fetcher
-}
-
-
-def _upload_image_to_drive(
-    drive_svc,
-    image_bytes: bytes,
-    filename: str,
-    folder_id: str,
-) -> str:
-    """
-    Upload an image into the prospect's Drive folder, make it publicly readable,
-    and return a URL the Google Slides API can fetch without a redirect.
-
-    IMPORTANT: drive.google.com/uc?id=... redirects and the Slides API refuses
-    to follow it.  We fetch webContentLink after upload instead — it includes
-    ?export=download and resolves to the raw file without a redirect chain.
-    """
-    import time
-
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "png"
-    mime_type = _IMAGE_MIME_TYPES.get(ext, "image/png")
-
-    media = MediaIoBaseUpload(io.BytesIO(image_bytes), mimetype=mime_type)
-    file_meta = drive_svc.files().create(
-        body={"name": filename, "parents": [folder_id]},
-        media_body=media,
-        fields="id",
-    ).execute()
-    file_id = file_meta["id"]
-
-    # Grant public read access so the Slides API can fetch without OAuth
-    drive_svc.permissions().create(
-        fileId=file_id,
-        body={"role": "reader", "type": "anyone"},
-        fields="id",
-    ).execute()
-
-    # Give Drive a moment to propagate the permission before Slides tries to fetch
-    time.sleep(2)
-
-    # webContentLink = https://drive.google.com/uc?id=...&export=download
-    # This resolves directly to file bytes; the Slides API can follow it without issues.
-    file_info = drive_svc.files().get(
-        fileId=file_id,
-        fields="webContentLink",
-    ).execute()
-
-    return file_info.get(
-        "webContentLink",
-        f"https://drive.google.com/uc?export=download&id={file_id}",
-    )
-
-
-# ---------------------------------------------------------------------------
 # Speaker notes parsing
 # ---------------------------------------------------------------------------
 
@@ -334,7 +278,8 @@ def build_context(proposal: dict, brief: dict) -> dict:
     ctx["BRAND_SUMMARY"]          = proposal.get("brand_summary", "")
     ctx["KEY_STAT"]               = proposal.get("key_stat", "")
     ctx["KEY_STAT_LABEL"]         = proposal.get("key_stat_label", "")
-    # Placeholder for a product/store image — filled manually by account manager
+    # If no store image was uploaded, clear this token; if an image was uploaded
+    # the replaceAllShapesWithImage request runs first and this text is unreachable.
     ctx["PRODUCT_OR_STORE_IMAGE"] = ""
 
     # Realities — always 3
@@ -382,20 +327,25 @@ def build_context(proposal: dict, brief: dict) -> dict:
 def generate_slides(
     proposal: dict,
     brief: dict,
-    logo_bytes: Optional[bytes] = None,
-    logo_filename: Optional[str] = None,
-    store_image_bytes: Optional[bytes] = None,
-    store_image_filename: Optional[str] = None,
+    logo_url: Optional[str] = None,
+    store_url: Optional[str] = None,
 ) -> str:
     """
     Copies the Slides template, assembles a custom deck for this proposal,
     fills all tokens, and returns the editable Google Slides URL.
 
-    Optional image parameters:
-      logo_bytes / logo_filename     — prospect logo; replaces {{PROSPECT_NAME}} on
-                                       slides 1 & 2 only (cover + overview).
-      store_image_bytes / filename   — product or store photo; replaces the
-                                       {{PRODUCT_OR_STORE_IMAGE}} shape on slide 3.
+    logo_url  — public URL of the prospect logo (served by the Railway app's
+                /images/{uuid} endpoint).  If provided, replaces the
+                {{PROSPECT_NAME}} shape on slides 1 & 2 (cover + overview).
+    store_url — public URL of the product/store photo.  If provided, replaces
+                the {{PRODUCT_OR_STORE_IMAGE}} shape globally.
+
+    WHY RAILWAY URLs AND NOT DRIVE URLs:
+      The Google Slides API fetches images with a raw HTTP GET.  Drive URLs
+      (uc?id=...) respond with a redirect which the Slides API refuses to follow,
+      returning a 400 "problem retrieving the image" error.  Serving from the
+      same Railway deployment produces a plain 200 with raw image bytes — no
+      redirects, no auth, always reachable by Google's servers.
     """
     drive_svc  = _drive()
     slides_svc = _slides()
@@ -448,53 +398,38 @@ def generate_slides(
 
     # 4a — Image replacements  ← MUST come before text replacements so the
     #        {{TOKEN}} text still exists in the shape when we search for it.
-    #        replaceAllShapesWithImage swaps the entire shape for an image element;
-    #        the subsequent replaceAllText requests won't find those shapes after.
+    #        replaceAllShapesWithImage replaces the entire shape with an image;
+    #        the subsequent replaceAllText requests simply find nothing on those slides.
 
-    if logo_bytes and logo_filename:
-        try:
-            logo_url = _upload_image_to_drive(
-                drive_svc, logo_bytes, f"logo_{logo_filename}", folder_id
-            )
-            # Limit replacement to slides 1 & 2 (cover + overview) only —
-            # {{PROSPECT_NAME}} on other slides is still replaced as text below.
-            cover_overview_ids = [
-                s["id"] for s in slide_info if s["type"] in ("cover", "overview")
-            ]
-            if cover_overview_ids:
-                requests.append({
-                    "replaceAllShapesWithImage": {
-                        "imageUrl": logo_url,
-                        "imageReplaceMethod": "CENTER_INSIDE",
-                        "containsText": {"text": "{{PROSPECT_NAME}}"},
-                        "pageObjectIds": cover_overview_ids,
-                    }
-                })
-                print(
-                    f"[slides] Logo queued for {len(cover_overview_ids)} slide(s): "
-                    f"{cover_overview_ids}",
-                    flush=True,
-                )
-        except Exception as ex:
-            # Non-fatal — text replacement will fill {{PROSPECT_NAME}} as a fallback
-            print(f"[slides] Logo upload failed, falling back to text: {ex}", flush=True)
-
-    if store_image_bytes and store_image_filename:
-        try:
-            store_url = _upload_image_to_drive(
-                drive_svc, store_image_bytes, f"store_{store_image_filename}", folder_id
-            )
+    if logo_url:
+        # Limit to slides 1 & 2 (cover + overview) so {{PROSPECT_NAME}} on other
+        # slides is still filled with the company name as text.
+        cover_overview_ids = [
+            s["id"] for s in slide_info if s["type"] in ("cover", "overview")
+        ]
+        if cover_overview_ids:
             requests.append({
                 "replaceAllShapesWithImage": {
-                    "imageUrl": store_url,
-                    "imageReplaceMethod": "CENTER_CROP",
-                    "containsText": {"text": "{{PRODUCT_OR_STORE_IMAGE}}"},
+                    "imageUrl": logo_url,
+                    "imageReplaceMethod": "CENTER_INSIDE",
+                    "containsText": {"text": "{{PROSPECT_NAME}}"},
+                    "pageObjectIds": cover_overview_ids,
                 }
             })
-            print(f"[slides] Store image queued for replacement", flush=True)
-        except Exception as ex:
-            # Non-fatal — token will be cleared to empty string by text replacement
-            print(f"[slides] Store image upload failed, token will be cleared: {ex}", flush=True)
+            print(
+                f"[slides] Logo replacement queued for slides: {cover_overview_ids}",
+                flush=True,
+            )
+
+    if store_url:
+        requests.append({
+            "replaceAllShapesWithImage": {
+                "imageUrl": store_url,
+                "imageReplaceMethod": "CENTER_CROP",
+                "containsText": {"text": "{{PRODUCT_OR_STORE_IMAGE}}"},
+            }
+        })
+        print(f"[slides] Store image replacement queued", flush=True)
 
     # 4b — Global tokens (same value across all slides)
     for token, value in build_context(proposal, brief).items():

@@ -7,15 +7,22 @@ during the generation pipeline:
   1. Fetch & analyse prospect website  → diagnose()
   2. Write proposal content            → generate_proposal_content()
   3. Build Google Slides deck in Drive → generate_slides()
+
+IMAGE SERVING
+  Uploaded logo and store images are held in _image_cache (in-memory dict,
+  keyed by UUID).  A /images/{id} endpoint serves them as raw bytes so that
+  the Google Slides API can fetch them at a real public URL — Drive URLs
+  redirect and the Slides API refuses to follow them.
 """
 
 import os
 import io
 import json
+import uuid
 from typing import List, Optional
 
 from fastapi import FastAPI, Request, Form, File, UploadFile
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
@@ -29,6 +36,60 @@ app = FastAPI(title="HW Proposal Generator")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
+# ---------------------------------------------------------------------------
+# In-memory image cache — keyed by UUID, value is (bytes, mime_type)
+# Entries live until the process restarts (Railway restarts on each deploy).
+# ---------------------------------------------------------------------------
+
+_image_cache: dict = {}
+
+_MIME_BY_EXT = {
+    "png":  "image/png",
+    "jpg":  "image/jpeg",
+    "jpeg": "image/jpeg",
+    "webp": "image/webp",
+    "gif":  "image/gif",
+}
+
+
+def _get_app_base_url() -> str:
+    """
+    Returns the public base URL of this Railway deployment.
+    Railway sets RAILWAY_PUBLIC_DOMAIN automatically (e.g. 'hw-proposal-generator.up.railway.app').
+    Falls back to localhost for local dev — note the Slides API can't reach localhost.
+    """
+    domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "").strip()
+    return f"https://{domain}" if domain else "http://localhost:8000"
+
+
+def _cache_image(image_bytes: bytes, filename: str) -> str:
+    """
+    Store image bytes in the cache and return a public URL served by this app.
+    The returned URL is what we hand to the Google Slides API.
+    """
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "png"
+    mime_type = _MIME_BY_EXT.get(ext, "image/png")
+    image_id = str(uuid.uuid4())
+    _image_cache[image_id] = (image_bytes, mime_type)
+    return f"{_get_app_base_url()}/images/{image_id}"
+
+
+@app.get("/images/{image_id}")
+async def serve_image(image_id: str):
+    """
+    Temporary image endpoint used by the Google Slides API during proposal generation.
+    Returns raw image bytes so the Slides replaceAllShapesWithImage request can fetch them.
+    """
+    entry = _image_cache.get(image_id)
+    if not entry:
+        return Response(status_code=404)
+    image_bytes, mime_type = entry
+    return Response(content=image_bytes, media_type=mime_type)
+
+
+# ---------------------------------------------------------------------------
+# Document text extraction
+# ---------------------------------------------------------------------------
 
 def _extract_doc_text(file: UploadFile) -> str:
     """
@@ -65,6 +126,10 @@ def _extract_doc_text(file: UploadFile) -> str:
         return ""
 
 
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
 @app.get("/", response_class=HTMLResponse)
 async def intake_form(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
@@ -78,7 +143,6 @@ async def health():
     b64 = os.environ.get("GOOGLE_TOKEN_PICKLE_B64", "")
     token_exists = Path("token.pickle").exists()
 
-    # Attempt bootstrap if not already done
     if b64 and not token_exists:
         try:
             Path("token.pickle").write_bytes(base64.b64decode(b64.strip()))
@@ -96,6 +160,7 @@ async def health():
         "GOOGLE_TOKEN_PICKLE_B64_length": len(b64),
         "GOOGLE_DRIVE_ROOT_FOLDER_ID_set": bool(os.environ.get("GOOGLE_DRIVE_ROOT_FOLDER_ID")),
         "ANTHROPIC_API_KEY_set": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "APP_BASE_URL": _get_app_base_url(),
         "token_pickle": bootstrap_result,
     }
 
@@ -120,21 +185,20 @@ async def generate(
     if doc_context:
         print(f"[pipeline] Extracted {len(doc_context)} chars from uploaded doc: {brief_doc.filename}", flush=True)
 
-    # Read image bytes upfront — UploadFile streams must be consumed before
-    # the SSE generator starts or the request context may be gone.
-    logo_bytes: Optional[bytes] = None
-    logo_filename: Optional[str] = None
+    # Read image bytes upfront and cache them so the /images/{id} endpoint can serve
+    # them while generate_slides() is running.  We pass public URLs (not bytes) to
+    # generate_slides so the Slides API can fetch them directly.
+    logo_url: Optional[str] = None
     if prospect_logo and prospect_logo.filename:
         logo_bytes = prospect_logo.file.read()
-        logo_filename = prospect_logo.filename
-        print(f"[pipeline] Logo uploaded: {logo_filename} ({len(logo_bytes)} bytes)", flush=True)
+        logo_url = _cache_image(logo_bytes, prospect_logo.filename)
+        print(f"[pipeline] Logo cached: {prospect_logo.filename} ({len(logo_bytes)} bytes) → {logo_url}", flush=True)
 
-    store_image_bytes: Optional[bytes] = None
-    store_image_filename: Optional[str] = None
+    store_url: Optional[str] = None
     if store_image and store_image.filename:
-        store_image_bytes = store_image.file.read()
-        store_image_filename = store_image.filename
-        print(f"[pipeline] Store image uploaded: {store_image_filename} ({len(store_image_bytes)} bytes)", flush=True)
+        store_bytes = store_image.file.read()
+        store_url = _cache_image(store_bytes, store_image.filename)
+        print(f"[pipeline] Store image cached: {store_image.filename} ({len(store_bytes)} bytes) → {store_url}", flush=True)
 
     brief = {
         "prospect_name": prospect_name,
@@ -176,10 +240,8 @@ async def generate(
             slides_link = generate_slides(
                 proposal,
                 brief,
-                logo_bytes=logo_bytes,
-                logo_filename=logo_filename,
-                store_image_bytes=store_image_bytes,
-                store_image_filename=store_image_filename,
+                logo_url=logo_url,
+                store_url=store_url,
             )
             print(f"[pipeline] DONE generate_slides: {slides_link}", flush=True)
 
