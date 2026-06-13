@@ -52,26 +52,41 @@ _MIME_BY_EXT = {
 }
 
 
-def _get_app_base_url() -> str:
+def _derive_base_url(request: Request) -> str:
     """
-    Returns the public base URL of this Railway deployment.
-    Railway sets RAILWAY_PUBLIC_DOMAIN automatically (e.g. 'hw-proposal-generator.up.railway.app').
-    Falls back to localhost for local dev — note the Slides API can't reach localhost.
+    Derives the public-facing base URL from the current request.
+
+    Priority order:
+    1. APP_PUBLIC_URL env var (explicit override — set this in Railway Variables
+       if the automatic detection below ever gives the wrong result).
+    2. X-Forwarded-Proto + Host headers set by Railway's reverse proxy.
+    3. request.base_url as a last resort (may be internal on Railway).
     """
-    domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "").strip()
-    return f"https://{domain}" if domain else "http://localhost:8000"
+    # 1 — explicit override
+    explicit = os.environ.get("APP_PUBLIC_URL", "").strip().rstrip("/")
+    if explicit:
+        return explicit
+
+    # 2 — Railway proxy headers (most reliable on Railway deployments)
+    proto = request.headers.get("x-forwarded-proto", "https")
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host", "")
+    if host:
+        return f"{proto}://{host}"
+
+    # 3 — fallback (works locally; won't be reachable by Google on Railway)
+    return str(request.base_url).rstrip("/")
 
 
-def _cache_image(image_bytes: bytes, filename: str) -> str:
+def _cache_image(image_bytes: bytes, filename: str, base_url: str) -> str:
     """
     Store image bytes in the cache and return a public URL served by this app.
-    The returned URL is what we hand to the Google Slides API.
+    The returned URL is passed directly to the Google Slides API.
     """
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "png"
     mime_type = _MIME_BY_EXT.get(ext, "image/png")
     image_id = str(uuid.uuid4())
     _image_cache[image_id] = (image_bytes, mime_type)
-    return f"{_get_app_base_url()}/images/{image_id}"
+    return f"{base_url}/images/{image_id}"
 
 
 @app.get("/images/{image_id}")
@@ -136,7 +151,7 @@ async def intake_form(request: Request):
 
 
 @app.get("/health")
-async def health():
+async def health(request: Request):
     """Quick check that env vars and token bootstrap are working. Safe to hit publicly."""
     from pathlib import Path
     import base64
@@ -160,7 +175,8 @@ async def health():
         "GOOGLE_TOKEN_PICKLE_B64_length": len(b64),
         "GOOGLE_DRIVE_ROOT_FOLDER_ID_set": bool(os.environ.get("GOOGLE_DRIVE_ROOT_FOLDER_ID")),
         "ANTHROPIC_API_KEY_set": bool(os.environ.get("ANTHROPIC_API_KEY")),
-        "APP_BASE_URL": _get_app_base_url(),
+        # Check this value — it must be your public Railway URL, not localhost
+        "APP_BASE_URL": _derive_base_url(request),
         "token_pickle": bootstrap_result,
     }
 
@@ -185,20 +201,25 @@ async def generate(
     if doc_context:
         print(f"[pipeline] Extracted {len(doc_context)} chars from uploaded doc: {brief_doc.filename}", flush=True)
 
+    # Derive the public base URL from the request (Railway proxy headers).
+    # This URL is used to build /images/{uuid} links that the Slides API fetches.
+    base_url = _derive_base_url(request)
+    print(f"[pipeline] App base URL: {base_url}", flush=True)
+
     # Read image bytes upfront and cache them so the /images/{id} endpoint can serve
     # them while generate_slides() is running.  We pass public URLs (not bytes) to
     # generate_slides so the Slides API can fetch them directly.
     logo_url: Optional[str] = None
     if prospect_logo and prospect_logo.filename:
         logo_bytes = prospect_logo.file.read()
-        logo_url = _cache_image(logo_bytes, prospect_logo.filename)
-        print(f"[pipeline] Logo cached: {prospect_logo.filename} ({len(logo_bytes)} bytes) → {logo_url}", flush=True)
+        logo_url = _cache_image(logo_bytes, prospect_logo.filename, base_url)
+        print(f"[pipeline] Logo cached → {logo_url}", flush=True)
 
     store_url: Optional[str] = None
     if store_image and store_image.filename:
         store_bytes = store_image.file.read()
-        store_url = _cache_image(store_bytes, store_image.filename)
-        print(f"[pipeline] Store image cached: {store_image.filename} ({len(store_bytes)} bytes) → {store_url}", flush=True)
+        store_url = _cache_image(store_bytes, store_image.filename, base_url)
+        print(f"[pipeline] Store image cached → {store_url}", flush=True)
 
     brief = {
         "prospect_name": prospect_name,
