@@ -393,22 +393,25 @@ def generate_slides(
         ).execute()
         slide_info = [s for s in slide_info if s["id"] not in ids_to_delete]
 
-    # 4 — Build all replacement requests
-    requests = []
+    # 4 — Build image and text replacement requests into separate lists.
+    #     We run them as two batchUpdate calls so a failed image fetch doesn't
+    #     abort all the text token replacements.
+    image_requests = []
+    text_requests  = []
 
-    # 4a — Image replacements  ← MUST come before text replacements so the
-    #        {{TOKEN}} text still exists in the shape when we search for it.
-    #        replaceAllShapesWithImage replaces the entire shape with an image;
-    #        the subsequent replaceAllText requests simply find nothing on those slides.
+    # 4a — Image replacements
+    #   replaceAllShapesWithImage replaces the entire shape with the image, so it
+    #   MUST run before replaceAllText — otherwise the {{TOKEN}} text is gone and
+    #   the image replacement finds nothing (or worse, replaces the wrong shape).
 
     if logo_url:
-        # Limit to slides 1 & 2 (cover + overview) so {{PROSPECT_NAME}} on other
-        # slides is still filled with the company name as text.
+        # Limit to cover + overview slides so {{PROSPECT_NAME}} on all other slides
+        # is still filled with the company name as plain text.
         cover_overview_ids = [
             s["id"] for s in slide_info if s["type"] in ("cover", "overview")
         ]
         if cover_overview_ids:
-            requests.append({
+            image_requests.append({
                 "replaceAllShapesWithImage": {
                     "imageUrl": logo_url,
                     "imageReplaceMethod": "CENTER_INSIDE",
@@ -416,24 +419,22 @@ def generate_slides(
                     "pageObjectIds": cover_overview_ids,
                 }
             })
-            print(
-                f"[slides] Logo replacement queued for slides: {cover_overview_ids}",
-                flush=True,
-            )
+            print(f"[slides] Logo URL: {logo_url}", flush=True)
+            print(f"[slides] Logo queued for slides: {cover_overview_ids}", flush=True)
 
     if store_url:
-        requests.append({
+        image_requests.append({
             "replaceAllShapesWithImage": {
                 "imageUrl": store_url,
                 "imageReplaceMethod": "CENTER_CROP",
                 "containsText": {"text": "{{PRODUCT_OR_STORE_IMAGE}}"},
             }
         })
-        print(f"[slides] Store image replacement queued", flush=True)
+        print(f"[slides] Store image URL: {store_url}", flush=True)
 
     # 4b — Global tokens (same value across all slides)
     for token, value in build_context(proposal, brief).items():
-        requests.append({
+        text_requests.append({
             "replaceAllText": {
                 "containsText": {"text": f"{{{{{token}}}}}"},
                 "replaceText":  str(value) if value is not None else "",
@@ -446,7 +447,7 @@ def generate_slides(
             ("{{SLIDE_LABEL}}", slide["label"]),
             ("{{PAGE_NUMBER}}", str(page_num)),
         ]:
-            requests.append({
+            text_requests.append({
                 "replaceAllText": {
                     "containsText":  {"text": token},
                     "replaceText":   value,
@@ -454,10 +455,34 @@ def generate_slides(
                 }
             })
 
-    # 5 — Execute everything in one batchUpdate
+    # 5 — Run image batch first (non-fatal).
+    #     If the Slides API can't fetch the image URL we log the full error and
+    #     carry on — the proposal still generates with text tokens only.
+    #     The {{PRODUCT_OR_STORE_IMAGE}} and {{PROSPECT_NAME}} tokens are already
+    #     blanked in build_context() so no raw placeholder leaks into the deck.
+    if image_requests:
+        try:
+            slides_svc.presentations().batchUpdate(
+                presentationId=presentation_id,
+                body={"requests": image_requests},
+            ).execute()
+            print(
+                f"[slides] Image batch OK ({len(image_requests)} requests replaced)",
+                flush=True,
+            )
+        except Exception as img_ex:
+            # Log the full error so we can read the exact URL that was attempted
+            # from Railway logs and diagnose the accessibility problem.
+            print(
+                f"[slides] Image batch FAILED (proposal will continue without images):\n"
+                f"  {img_ex}",
+                flush=True,
+            )
+
+    # 6 — Run text batch (always executes, even if images failed)
     slides_svc.presentations().batchUpdate(
         presentationId=presentation_id,
-        body={"requests": requests},
+        body={"requests": text_requests},
     ).execute()
 
     # 6 — Return editable link

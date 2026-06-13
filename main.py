@@ -71,6 +71,12 @@ def _derive_base_url(request: Request) -> str:
     proto = request.headers.get("x-forwarded-proto", "https")
     host = request.headers.get("x-forwarded-host") or request.headers.get("host", "")
     if host:
+        # Strip default ports — Railway sometimes includes :443 in the Host header
+        # which produces a redundant and potentially problematic URL.
+        if host.endswith(":443"):
+            host = host[:-4]
+        elif host.endswith(":80"):
+            host = host[:-3]
         return f"{proto}://{host}"
 
     # 3 — fallback (works locally; won't be reachable by Google on Railway)
@@ -201,10 +207,35 @@ async def generate(
     if doc_context:
         print(f"[pipeline] Extracted {len(doc_context)} chars from uploaded doc: {brief_doc.filename}", flush=True)
 
+    # Log raw request headers so we can verify the URL derivation in Railway logs.
+    print(
+        f"[pipeline] Proxy headers — "
+        f"host={request.headers.get('host')} | "
+        f"x-forwarded-proto={request.headers.get('x-forwarded-proto')} | "
+        f"x-forwarded-host={request.headers.get('x-forwarded-host')}",
+        flush=True,
+    )
+
     # Derive the public base URL from the request (Railway proxy headers).
     # This URL is used to build /images/{uuid} links that the Slides API fetches.
     base_url = _derive_base_url(request)
     print(f"[pipeline] App base URL: {base_url}", flush=True)
+
+    def _selftest_url(url: str) -> None:
+        """
+        Fire a GET from within this process to verify the URL is reachable.
+        If this fails, the Slides API definitely can't fetch it either.
+        """
+        import urllib.request as _urlreq
+        try:
+            resp = _urlreq.urlopen(url, timeout=8)
+            print(
+                f"[pipeline] URL self-test OK → {url} "
+                f"({resp.status}, {resp.headers.get('Content-Length', '? bytes')})",
+                flush=True,
+            )
+        except Exception as ex:
+            print(f"[pipeline] URL self-test FAILED → {url}\n  {ex}", flush=True)
 
     # Read image bytes upfront and cache them so the /images/{id} endpoint can serve
     # them while generate_slides() is running.  We pass public URLs (not bytes) to
@@ -214,12 +245,14 @@ async def generate(
         logo_bytes = prospect_logo.file.read()
         logo_url = _cache_image(logo_bytes, prospect_logo.filename, base_url)
         print(f"[pipeline] Logo cached → {logo_url}", flush=True)
+        _selftest_url(logo_url)
 
     store_url: Optional[str] = None
     if store_image and store_image.filename:
         store_bytes = store_image.file.read()
         store_url = _cache_image(store_bytes, store_image.filename, base_url)
         print(f"[pipeline] Store image cached → {store_url}", flush=True)
+        _selftest_url(store_url)
 
     brief = {
         "prospect_name": prospect_name,
