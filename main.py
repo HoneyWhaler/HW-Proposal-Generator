@@ -112,11 +112,29 @@ async def generate(
     account_manager_email: str = Form(...),
     sales_notes: str = Form(""),
     brief_doc: Optional[UploadFile] = File(None),
+    prospect_logo: Optional[UploadFile] = File(None),
+    store_image: Optional[UploadFile] = File(None),
 ):
-    # Extract text from uploaded document (if any)
+    # Extract text from uploaded brief/RFP (if any)
     doc_context = _extract_doc_text(brief_doc) if brief_doc else ""
     if doc_context:
         print(f"[pipeline] Extracted {len(doc_context)} chars from uploaded doc: {brief_doc.filename}", flush=True)
+
+    # Read image bytes upfront — UploadFile streams must be consumed before
+    # the SSE generator starts or the request context may be gone.
+    logo_bytes: Optional[bytes] = None
+    logo_filename: Optional[str] = None
+    if prospect_logo and prospect_logo.filename:
+        logo_bytes = prospect_logo.file.read()
+        logo_filename = prospect_logo.filename
+        print(f"[pipeline] Logo uploaded: {logo_filename} ({len(logo_bytes)} bytes)", flush=True)
+
+    store_image_bytes: Optional[bytes] = None
+    store_image_filename: Optional[str] = None
+    if store_image and store_image.filename:
+        store_image_bytes = store_image.file.read()
+        store_image_filename = store_image.filename
+        print(f"[pipeline] Store image uploaded: {store_image_filename} ({len(store_image_bytes)} bytes)", flush=True)
 
     brief = {
         "prospect_name": prospect_name,
@@ -155,7 +173,14 @@ async def generate(
             # Step 3 — Build Google Slides deck and save to Drive
             print(f"[pipeline] START generate_slides", flush=True)
             yield send("building", "Building your proposal in Google Slides...")
-            slides_link = generate_slides(proposal, brief)
+            slides_link = generate_slides(
+                proposal,
+                brief,
+                logo_bytes=logo_bytes,
+                logo_filename=logo_filename,
+                store_image_bytes=store_image_bytes,
+                store_image_filename=store_image_filename,
+            )
             print(f"[pipeline] DONE generate_slides: {slides_link}", flush=True)
 
             # Done

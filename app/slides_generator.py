@@ -32,13 +32,16 @@ ENV VARS REQUIRED:
   GOOGLE_DRIVE_ROOT_FOLDER_ID — root folder where prospect subfolders live
 """
 
+import io
 import os
 import pickle
 import base64
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 from google.auth.transport.requests import Request
 
 TOKEN_FILE = Path("token.pickle")
@@ -187,6 +190,54 @@ def _find_or_create_folder(service, name: str, parent_id: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Image upload helper
+# ---------------------------------------------------------------------------
+
+_IMAGE_MIME_TYPES = {
+    "png":  "image/png",
+    "jpg":  "image/jpeg",
+    "jpeg": "image/jpeg",
+    "webp": "image/webp",
+    "gif":  "image/gif",
+    "svg":  "image/svg+xml",
+}
+
+
+def _upload_image_to_drive(
+    drive_svc,
+    image_bytes: bytes,
+    filename: str,
+    folder_id: str,
+) -> str:
+    """
+    Upload an image into the prospect's Drive folder, make it publicly readable,
+    and return a direct URL that the Google Slides API can fetch.
+
+    The URL format  https://drive.google.com/uc?id=<id>  is what the Slides
+    replaceAllShapesWithImage request expects for Drive-hosted images.
+    """
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "png"
+    mime_type = _IMAGE_MIME_TYPES.get(ext, "image/png")
+
+    media = MediaIoBaseUpload(io.BytesIO(image_bytes), mimetype=mime_type)
+    file_meta = drive_svc.files().create(
+        body={"name": filename, "parents": [folder_id]},
+        media_body=media,
+        fields="id",
+    ).execute()
+    file_id = file_meta["id"]
+
+    # Grant public read access so the Slides API can fetch the image without auth
+    drive_svc.permissions().create(
+        fileId=file_id,
+        body={"role": "reader", "type": "anyone"},
+        fields="id",
+    ).execute()
+
+    return f"https://drive.google.com/uc?id={file_id}"
+
+
+# ---------------------------------------------------------------------------
 # Speaker notes parsing
 # ---------------------------------------------------------------------------
 
@@ -312,10 +363,23 @@ def build_context(proposal: dict, brief: dict) -> dict:
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def generate_slides(proposal: dict, brief: dict) -> str:
+def generate_slides(
+    proposal: dict,
+    brief: dict,
+    logo_bytes: Optional[bytes] = None,
+    logo_filename: Optional[str] = None,
+    store_image_bytes: Optional[bytes] = None,
+    store_image_filename: Optional[str] = None,
+) -> str:
     """
     Copies the Slides template, assembles a custom deck for this proposal,
     fills all tokens, and returns the editable Google Slides URL.
+
+    Optional image parameters:
+      logo_bytes / logo_filename     — prospect logo; replaces {{PROSPECT_NAME}} on
+                                       slides 1 & 2 only (cover + overview).
+      store_image_bytes / filename   — product or store photo; replaces the
+                                       {{PRODUCT_OR_STORE_IMAGE}} shape on slide 3.
     """
     drive_svc  = _drive()
     slides_svc = _slides()
@@ -366,7 +430,57 @@ def generate_slides(proposal: dict, brief: dict) -> str:
     # 4 — Build all replacement requests
     requests = []
 
-    # 4a — Global tokens (same value across all slides)
+    # 4a — Image replacements  ← MUST come before text replacements so the
+    #        {{TOKEN}} text still exists in the shape when we search for it.
+    #        replaceAllShapesWithImage swaps the entire shape for an image element;
+    #        the subsequent replaceAllText requests won't find those shapes after.
+
+    if logo_bytes and logo_filename:
+        try:
+            logo_url = _upload_image_to_drive(
+                drive_svc, logo_bytes, f"logo_{logo_filename}", folder_id
+            )
+            # Limit replacement to slides 1 & 2 (cover + overview) only —
+            # {{PROSPECT_NAME}} on other slides is still replaced as text below.
+            cover_overview_ids = [
+                s["id"] for s in slide_info if s["type"] in ("cover", "overview")
+            ]
+            if cover_overview_ids:
+                requests.append({
+                    "replaceAllShapesWithImage": {
+                        "imageUrl": logo_url,
+                        "imageReplaceMethod": "CENTER_INSIDE",
+                        "containsText": {"text": "{{PROSPECT_NAME}}"},
+                        "pageObjectIds": cover_overview_ids,
+                    }
+                })
+                print(
+                    f"[slides] Logo queued for {len(cover_overview_ids)} slide(s): "
+                    f"{cover_overview_ids}",
+                    flush=True,
+                )
+        except Exception as ex:
+            # Non-fatal — text replacement will fill {{PROSPECT_NAME}} as a fallback
+            print(f"[slides] Logo upload failed, falling back to text: {ex}", flush=True)
+
+    if store_image_bytes and store_image_filename:
+        try:
+            store_url = _upload_image_to_drive(
+                drive_svc, store_image_bytes, f"store_{store_image_filename}", folder_id
+            )
+            requests.append({
+                "replaceAllShapesWithImage": {
+                    "imageUrl": store_url,
+                    "imageReplaceMethod": "CENTER_CROP",
+                    "containsText": {"text": "{{PRODUCT_OR_STORE_IMAGE}}"},
+                }
+            })
+            print(f"[slides] Store image queued for replacement", flush=True)
+        except Exception as ex:
+            # Non-fatal — token will be cleared to empty string by text replacement
+            print(f"[slides] Store image upload failed, token will be cleared: {ex}", flush=True)
+
+    # 4b — Global tokens (same value across all slides)
     for token, value in build_context(proposal, brief).items():
         requests.append({
             "replaceAllText": {
@@ -375,7 +489,7 @@ def generate_slides(proposal: dict, brief: dict) -> str:
             }
         })
 
-    # 4b — Per-slide SLIDE_LABEL and PAGE_NUMBER
+    # 4c — Per-slide SLIDE_LABEL and PAGE_NUMBER
     for page_num, slide in enumerate(slide_info, 1):
         for token, value in [
             ("{{SLIDE_LABEL}}", slide["label"]),

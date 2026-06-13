@@ -132,6 +132,13 @@ header h1 {
   margin-top: -12px;
 }
 
+/* Subtle secondary label that sits inline next to a field label */
+.hint-inline {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
 .field {
   margin-bottom: 18px;
 }

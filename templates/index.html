@@ -41,6 +41,10 @@
             <input type="text" id="industry" name="industry" placeholder="e.g. Health & Beauty" />
           </div>
         </div>
+        <div class="field">
+          <label for="prospect_logo">Prospect logo <span class="hint-inline">(optional — replaces company name on slides 1 &amp; 2)</span></label>
+          <input type="file" id="prospect_logo" name="prospect_logo" accept=".png,.jpg,.jpeg,.svg,.webp" />
+        </div>
       </div>
 
       <div class="form-section">
@@ -96,10 +100,13 @@
       </div>
 
       <div class="form-section">
-        <div class="section-label">Brief / RFP Document</div>
-        <p class="hint">Optional — attach a PDF or Word doc. Claude will use the content as additional context.</p>
+        <div class="section-label">Attachments</div>
         <div class="field">
-          <label for="brief_doc">Upload document</label>
+          <label for="store_image">Product / store image <span class="req">*</span> <span class="hint-inline">(used on slide 3)</span></label>
+          <input type="file" id="store_image" name="store_image" accept=".png,.jpg,.jpeg,.webp" />
+        </div>
+        <div class="field">
+          <label for="brief_doc">Brief / RFP document <span class="hint-inline">(optional — PDF or Word, gives Claude more context)</span></label>
           <input type="file" id="brief_doc" name="brief_doc" accept=".pdf,.docx,.doc" />
         </div>
       </div>
