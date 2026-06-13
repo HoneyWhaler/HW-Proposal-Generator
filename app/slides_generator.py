@@ -199,7 +199,7 @@ _IMAGE_MIME_TYPES = {
     "jpeg": "image/jpeg",
     "webp": "image/webp",
     "gif":  "image/gif",
-    "svg":  "image/svg+xml",
+    # SVG intentionally excluded — not supported by the Slides API image fetcher
 }
 
 
@@ -211,11 +211,14 @@ def _upload_image_to_drive(
 ) -> str:
     """
     Upload an image into the prospect's Drive folder, make it publicly readable,
-    and return a direct URL that the Google Slides API can fetch.
+    and return a URL the Google Slides API can fetch without a redirect.
 
-    The URL format  https://drive.google.com/uc?id=<id>  is what the Slides
-    replaceAllShapesWithImage request expects for Drive-hosted images.
+    IMPORTANT: drive.google.com/uc?id=... redirects and the Slides API refuses
+    to follow it.  We fetch webContentLink after upload instead — it includes
+    ?export=download and resolves to the raw file without a redirect chain.
     """
+    import time
+
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "png"
     mime_type = _IMAGE_MIME_TYPES.get(ext, "image/png")
 
@@ -227,14 +230,27 @@ def _upload_image_to_drive(
     ).execute()
     file_id = file_meta["id"]
 
-    # Grant public read access so the Slides API can fetch the image without auth
+    # Grant public read access so the Slides API can fetch without OAuth
     drive_svc.permissions().create(
         fileId=file_id,
         body={"role": "reader", "type": "anyone"},
         fields="id",
     ).execute()
 
-    return f"https://drive.google.com/uc?id={file_id}"
+    # Give Drive a moment to propagate the permission before Slides tries to fetch
+    time.sleep(2)
+
+    # webContentLink = https://drive.google.com/uc?id=...&export=download
+    # This resolves directly to file bytes; the Slides API can follow it without issues.
+    file_info = drive_svc.files().get(
+        fileId=file_id,
+        fields="webContentLink",
+    ).execute()
+
+    return file_info.get(
+        "webContentLink",
+        f"https://drive.google.com/uc?export=download&id={file_id}",
+    )
 
 
 # ---------------------------------------------------------------------------
