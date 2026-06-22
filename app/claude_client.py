@@ -14,12 +14,178 @@ To update HW context: edit context/services.md and context/rate_card.md.
 """
 
 import os
+import re
 import json
 from pathlib import Path
 import httpx
 import anthropic
 
 CONTEXT_DIR = Path(__file__).parent.parent / "context"
+
+
+# ---------------------------------------------------------------------------
+# ROBUST JSON PARSING
+# ---------------------------------------------------------------------------
+# Claude returns proposal/diagnosis content as JSON in a text block. A bare
+# json.loads() on that text is fragile: a single unescaped quote, stray line of
+# prose, or a response cut off by max_tokens crashes the whole run with a
+# cryptic "Unterminated string" error. The helpers below parse defensively.
+
+
+class ClaudeResponseError(RuntimeError):
+    """Raised when Claude's reply cannot be turned into valid JSON."""
+
+
+def _strip_code_fences(text: str) -> str:
+    """Remove ``` / ```json fences if the model wrapped its JSON in a code block."""
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        text = "\n".join(l for l in lines if not l.strip().startswith("```")).strip()
+    return text
+
+
+def _extract_json_object(text: str) -> str:
+    """
+    Return the substring from the first '{' to its matching '}'.
+
+    Brace counting ignores braces inside string literals, so any stray prose the
+    model adds before or after the JSON object is discarded. If the object never
+    closes (truncated output), returns from the first '{' to the end so the caller
+    can still attempt a repair or raise a clear error.
+    """
+    start = text.find("{")
+    if start == -1:
+        return text
+    depth = 0
+    in_string = False
+    escaped = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if escaped:              # previous char was a backslash — skip this one
+            escaped = False
+            continue
+        if ch == "\\":
+            escaped = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:            # braces inside strings don't affect nesting
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return text[start:]
+
+
+def _escape_control_chars_in_strings(text: str) -> str:
+    """
+    Escape raw newlines/tabs that appear *inside* string values. Claude
+    occasionally emits these unescaped, which is invalid JSON. Characters outside
+    string literals are left untouched so the document structure is preserved.
+    """
+    out = []
+    in_string = False
+    escaped = False
+    for ch in text:
+        if escaped:
+            out.append(ch)
+            escaped = False
+            continue
+        if ch == "\\":
+            out.append(ch)
+            escaped = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            out.append(ch)
+            continue
+        if in_string and ch == "\n":
+            out.append("\\n")
+        elif in_string and ch == "\r":
+            out.append("\\r")
+        elif in_string and ch == "\t":
+            out.append("\\t")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _repair_json_with_claude(broken: str) -> str:
+    """
+    Last resort: ask a cheap, fast model to turn malformed text into valid JSON.
+    This recovers from problems a regex can't safely fix — most commonly an
+    unescaped double-quote inside a string value, the classic cause of
+    'Unterminated string'. Returns repaired raw text (still to be parsed).
+    """
+    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"], timeout=60.0)
+    message = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=8192,
+        system=(
+            "You repair malformed JSON. Return ONLY valid JSON with the same data, "
+            "fixing unescaped quotes, missing commas/brackets and stray text. "
+            "Do not add, remove or summarise any content. No markdown, no commentary."
+        ),
+        messages=[{"role": "user", "content": broken}],
+    )
+    return _strip_code_fences(message.content[0].text)
+
+
+def _parse_claude_json(message, *, step: str) -> dict:
+    """
+    Turn a Claude message into a dict, defending against the common ways the raw
+    text isn't clean JSON. Defences run cheapest-first:
+      1. Truncation — if the model hit max_tokens the JSON is cut off and nothing
+                      can recover it, so fail loudly with an actionable message.
+      2. Code fences / stray prose around the object.
+      3. Raw control chars + trailing commas (local regex repair).
+      4. Unescaped quotes etc. — one repair round-trip to a cheap model.
+    """
+    # 1. Truncation is unrecoverable locally — surface it clearly instead of a
+    #    misleading 'Unterminated string' from json.loads further down.
+    if message.stop_reason == "max_tokens":
+        raise ClaudeResponseError(
+            f"{step}: Claude hit the max_tokens limit and the JSON was truncated. "
+            f"Raise max_tokens or shorten the input (e.g. a long RFP) and retry."
+        )
+
+    raw = _strip_code_fences(message.content[0].text)
+    if not raw:
+        raise ClaudeResponseError(
+            f"{step}: Claude returned an empty response (stop_reason={message.stop_reason})."
+        )
+
+    raw = _extract_json_object(raw)
+
+    # Attempt 1 — parse as-is.
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+
+    # Attempt 2 — local repairs: escape control chars in strings, drop trailing commas.
+    repaired = _escape_control_chars_in_strings(raw)
+    repaired = re.sub(r",(\s*[}\]])", r"\1", repaired)  # remove trailing commas
+    try:
+        return json.loads(repaired)
+    except json.JSONDecodeError:
+        pass
+
+    # Attempt 3 — hand it to a model to fix (handles unescaped inner quotes).
+    try:
+        fixed = _extract_json_object(_repair_json_with_claude(raw))
+        return json.loads(fixed)
+    except json.JSONDecodeError as e:
+        snippet = raw[max(0, e.pos - 80) : e.pos + 80]
+        raise ClaudeResponseError(
+            f"{step}: could not parse Claude's JSON even after repair "
+            f"({e.msg}). Near: …{snippet}…"
+        ) from e
 
 
 def _load_context_file(filename: str) -> str:
@@ -142,17 +308,12 @@ Sales notes:
 
     message = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=2048,
+        max_tokens=3072,  # headroom so a detailed diagnosis isn't truncated
         system=DIAGNOSIS_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_message}],
     )
 
-    raw = message.content[0].text.strip()
-    if raw.startswith("```"):
-        lines = raw.splitlines()
-        raw = "\n".join(l for l in lines if not l.strip().startswith("```")).strip()
-
-    return json.loads(raw)
+    return _parse_claude_json(message, step="Diagnosis")
 
 
 # ---------------------------------------------------------------------------
@@ -283,20 +444,9 @@ Tone: {diagnosis.get("tone_notes", "")}
 
     message = client.messages.create(
         model="claude-opus-4-6",
-        max_tokens=8192,
+        max_tokens=16000,  # raised from 8192 so longer proposals can't truncate mid-JSON
         system=PROPOSAL_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_message}],
     )
 
-    raw = message.content[0].text.strip()
-    if raw.startswith("```"):
-        lines = raw.splitlines()
-        raw = "\n".join(l for l in lines if not l.strip().startswith("```")).strip()
-
-    if not raw:
-        raise ValueError(
-            f"Claude returned empty response. "
-            f"Stop reason: {message.stop_reason}. Full: {message.content}"
-        )
-
-    return json.loads(raw)
+    return _parse_claude_json(message, step="Proposal generation")
