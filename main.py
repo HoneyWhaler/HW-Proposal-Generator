@@ -8,11 +8,18 @@ during the generation pipeline:
   2. Write proposal content            → generate_proposal_content()
   3. Build Google Slides deck in Drive → generate_slides()
 
-IMAGE SERVING
-  Uploaded logo and store images are held in _image_cache (in-memory dict,
-  keyed by UUID).  A /images/{id} endpoint serves them as raw bytes so that
-  the Google Slides API can fetch them at a real public URL — Drive URLs
-  redirect and the Slides API refuses to follow them.
+IMAGE HOSTING
+  The Google Slides API fetches images via a plain HTTP GET.  It cannot follow
+  redirects and cannot reach Railway's own container over the public internet
+  (self-referential requests return 200 from inside the cluster, but Google's
+  servers are blocked at the network edge).
+
+  Strategy:
+  • If IMGUR_CLIENT_ID is set in Railway Variables → upload to Imgur's anonymous
+    API and pass the resulting i.imgur.com CDN URL.  This is a guaranteed-public,
+    no-redirect URL that the Slides API accepts without issue.
+  • Fallback → cache in-memory and serve from /images/{id} (works for local dev;
+    will fail on production Railway due to the network isolation above).
 """
 
 import os
@@ -83,16 +90,65 @@ def _derive_base_url(request: Request) -> str:
     return str(request.base_url).rstrip("/")
 
 
-def _cache_image(image_bytes: bytes, filename: str, base_url: str) -> str:
+def _upload_to_imgbb(image_bytes: bytes) -> str:
     """
-    Store image bytes in the cache and return a public URL served by this app.
-    The returned URL is passed directly to the Google Slides API.
+    Upload image bytes to imgBB and return the direct CDN URL.
+
+    Requires IMGBB_API_KEY in Railway Variables.
+    Get a free key at https://api.imgbb.com after signing up at imgbb.com.
+
+    The returned URL (https://i.ibb.co/...) is a plain CDN link — no redirects,
+    no auth — which the Google Slides API can fetch without issue.
     """
+    import base64
+    import json
+    import urllib.request
+    import urllib.parse
+
+    api_key = os.environ.get("IMGBB_API_KEY", "").strip()
+    if not api_key:
+        raise ValueError("IMGBB_API_KEY env var is not set")
+
+    data = urllib.parse.urlencode({
+        "key":   api_key,
+        "image": base64.b64encode(image_bytes).decode(),
+    }).encode()
+
+    req = urllib.request.Request(
+        "https://api.imgbb.com/1/upload",
+        data=data,
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        result = json.loads(resp.read())
+
+    if not result.get("success"):
+        raise ValueError(f"imgBB upload failed: {result}")
+
+    url = result["data"]["url"]
+    print(f"[pipeline] imgBB upload OK → {url}", flush=True)
+    return url
+
+
+def _get_image_url(image_bytes: bytes, filename: str, base_url: str) -> str:
+    """
+    Return a publicly accessible URL for the given image bytes.
+
+    Prefers imgBB (if IMGBB_API_KEY is set) because Railway's container is not
+    reachable by Google's servers for self-served /images/{id} URLs.
+    Falls back to the in-memory cache + /images endpoint for local dev.
+    """
+    if os.environ.get("IMGBB_API_KEY", "").strip():
+        return _upload_to_imgbb(image_bytes)
+
+    # Local / fallback: serve from this process
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "png"
     mime_type = _MIME_BY_EXT.get(ext, "image/png")
     image_id = str(uuid.uuid4())
     _image_cache[image_id] = (image_bytes, mime_type)
-    return f"{base_url}/images/{image_id}"
+    url = f"{base_url}/images/{image_id}"
+    print(f"[pipeline] Image cached locally (Slides API may not reach this) → {url}", flush=True)
+    return url
 
 
 @app.get("/images/{image_id}")
@@ -243,16 +299,14 @@ async def generate(
     logo_url: Optional[str] = None
     if prospect_logo and prospect_logo.filename:
         logo_bytes = prospect_logo.file.read()
-        logo_url = _cache_image(logo_bytes, prospect_logo.filename, base_url)
-        print(f"[pipeline] Logo cached → {logo_url}", flush=True)
-        _selftest_url(logo_url)
+        logo_url = _get_image_url(logo_bytes, prospect_logo.filename, base_url)
+        print(f"[pipeline] Logo URL → {logo_url}", flush=True)
 
     store_url: Optional[str] = None
     if store_image and store_image.filename:
         store_bytes = store_image.file.read()
-        store_url = _cache_image(store_bytes, store_image.filename, base_url)
-        print(f"[pipeline] Store image cached → {store_url}", flush=True)
-        _selftest_url(store_url)
+        store_url = _get_image_url(store_bytes, store_image.filename, base_url)
+        print(f"[pipeline] Store image URL → {store_url}", flush=True)
 
     brief = {
         "prospect_name": prospect_name,
